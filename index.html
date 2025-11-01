@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>mohammed's unblocker</title>
+  <meta name="description" content="mohammed's unblocker — a sleek Scramjet-based proxy UI with working backend." />
+  <style>
+    :root{
+      --bg:#071026;
+      --card:#0b1220;
+      --accent:#ff6bd6; /* vaporwave pink */
+      --accent-2:#6b9cff; /* cyan */
+      --muted:#98a0b3;
+      --glass: rgba(255,255,255,0.04);
+      --glass-2: rgba(255,255,255,0.02);
+      --radius:14px;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+
+    /* animated background full-screen canvas */
+    #bgCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+    body{
+      background:linear-gradient(180deg,#07101a,#041027);
+      color:#e6eef8;
+      display:flex;align-items:center;justify-content:center;padding:28px;transition:background .3s ease;font-smoothing:antialiased;
+    }
+
+    .container{position:relative;z-index:10;width:min(1200px,100%);display:grid;grid-template-columns:480px 1fr;gap:24px;align-items:start;transition:all .25s ease}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));backdrop-filter:blur(8px) saturate(120%);border-radius:var(--radius);padding:20px;box-shadow:0 10px 40px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.04);transform-origin:left center;transition:transform .25s ease,opacity .25s ease}
+
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+    .logo{width:56px;height:56px;border-radius:12px;display:grid;place-items:center;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 6px 22px rgba(107,155,255,0.08);}
+    .brand h1{font-size:18px;margin:0;text-transform:lowercase}
+    .brand p{margin:0;color:var(--muted);font-size:13px}
+
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px}
+    .input{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:12px 14px;border-radius:10px;color:inherit;font-size:14px;outline:none;width:100%;transition:box-shadow .18s ease}
+    .input::placeholder{color:rgba(230,238,248,0.45)}
+    .input:focus{box-shadow:0 8px 30px rgba(107,155,255,0.06)}
+
+    .controls{display:flex;gap:10px;margin-top:12px}
+    .btn{background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;padding:10px 14px;border-radius:10px;color:#041023;font-weight:700;cursor:pointer;transition:transform .12s ease}
+    .btn.small{padding:8px 10px;font-size:13px}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+
+    /* roblox button at the top */
+    .top-roblox{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:10px}
+    .roblox-btn{background:linear-gradient(90deg,#ff4fa3,#2ec0ff);color:#041023;padding:8px 12px;border-radius:10px;border:none;font-weight:800;cursor:pointer}
+
+    .preview{height:680px;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));position:relative}
+    .preview-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.02);background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent)}
+    .preview-title{font-weight:700}
+
+    .iframe-wrap{flex:1;position:relative;background:linear-gradient(180deg,#061018,#041018);display:flex;align-items:center;justify-content:center}
+    iframe{width:100%;height:100%;border:0;opacity:0;transform:translateY(8px);transition:opacity .45s cubic-bezier(.2,.9,.2,1),transform .45s cubic-bezier(.2,.9,.2,1)}
+    iframe.ready{opacity:1;transform:none}
+
+    /* loading overlay + progress bar */
+    .loading-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(4,8,14,0.72),rgba(4,8,14,0.38));backdrop-filter:blur(6px);z-index:40;opacity:1;transition:opacity .3s ease}
+    .loading-overlay.hidden{opacity:0;pointer-events:none}
+    .spinner{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;position:relative;margin-bottom:14px}
+    .spinner::before{content:'';position:absolute;inset:0;border-radius:50%;border:6px solid rgba(255,255,255,0.04)}
+    .spinner::after{content:'';position:absolute;inset:6px;border-radius:50%;border:6px solid transparent;border-top-color:var(--accent);animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .progress{width:60%;height:8px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:hidden}
+    .progress > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));border-radius:999px;transition:width .3s ease}
+
+    /* fullscreen / immersive mode */
+    body.fs-mode{background:linear-gradient(180deg,#00010a,#040a17)}
+    body.fs-mode .card{opacity:0;transform:translateX(-22px);pointer-events:none}
+    body.fs-mode .container{grid-template-columns:0 1fr}
+    body.fs-mode .preview{border-radius:0;height:100vh}
+
+    /* floating topbar visible in fs mode for typing */
+    .fs-topbar{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:60;display:none;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02));backdrop-filter:blur(6px);border-radius:999px;border:1px solid rgba(255,255,255,0.04)}
+    body.fs-mode .fs-topbar{display:flex}
+    .fs-input{min-width:420px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;outline:none}
+
+    /* particles and vaporwave lines */
+    .vapor-lines{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;opacity:0.9}
+    .vapor-lines svg{width:100%;height:100%}
+
+    /* connection status indicator */
+    .status-indicator{position:fixed;top:12px;right:12px;z-index:50;display:flex;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02));backdrop-filter:blur(6px);border-radius:999px;border:1px solid rgba(255,255,255,0.04);font-size:12px}
+    .status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+    .status-dot.error{background:#ff4444;animation:none}
+    .status-dot.success{background:#44ff44;animation:none}
+    @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+
+    /* responsive */
+    @media (max-width:980px){.container{grid-template-columns:1fr}.card{order:2}.preview{order:1;height:520px}.fs-input{min-width:220px}}
+  </style>
+</head>
+<body>
+  <!-- animated canvas in the background -->
+  <canvas id="bgCanvas"></canvas>
+
+  <!-- connection status indicator -->
+  <div class="status-indicator" id="statusIndicator">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Connecting...</span>
+  </div>
+
+  <div class="container">
+    <div class="card" role="region" aria-label="controls">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="brand"><div class="logo" title="double-click to paste">m</div><div><h1>mohammed's unblocker</h1><p style="margin:0;color:var(--muted);font-size:12px">vaporwave • live proxy</p></div></div>
+        <div class="top-roblox"><button id="robloxBtn" class="roblox-btn" title="Open easyfun.gg via proxy">ROBLOX</button></div>
+      </div>
+
+      <label for="q">Enter URL or search</label>
+      <input id="q" class="input" placeholder="https://example.com or search terms..." autocomplete="off" />
+
+      <div class="controls">
+        <button id="go" class="btn">Go</button>
+        <button id="clear" class="btn ghost small">Clear</button>
+        <button id="fsBtn" class="btn ghost small">⤢ Fullscreen</button>
+      </div>
+
+      <p style="margin-top:12px;color:var(--muted);font-size:13px">Typing text runs DuckDuckGo search through the proxy. The backend is now live and functional!</p>
+    </div>
+
+    <div id="preview" class="preview" role="region" aria-label="preview">
+      <div class="preview-header"><div class="preview-title">mohammed's unblocker</div></div>
+      <div class="iframe-wrap">
+        <div id="loading" class="loading-overlay" aria-hidden="true">
+          <div class="spinner" aria-hidden="true"></div>
+          <div class="progress" aria-hidden="true"><i style="width:0%"></i></div>
+        </div>
+        <div class="vapor-lines" aria-hidden="true">
+          <!-- subtle SVG neon lines for vaporwave effect -->
+          <svg preserveAspectRatio="none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#ff6bd6" stop-opacity="0.12"/><stop offset="1" stop-color="#6b9cff" stop-opacity="0.12"/></linearGradient>
+            </defs>
+            <path id="wave" d="M0 70 Q20 50 40 70 T100 70 V100 H0 Z" fill="url(#g1)"></path>
+            <g id="lines" stroke="#9be7ff" stroke-opacity="0.06" stroke-width="0.4">
+              <path d="M0 62 H100"/>
+              <path d="M0 66 H100"/>
+              <path d="M0 70 H100"/>
+              <path d="M0 74 H100"/>
+            </g>
+          </svg>
+        </div>
+        <iframe id="frame" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- floating topbar for fullscreen typing -->
+  <div class="fs-topbar" role="toolbar" aria-label="fullscreen controls">
+    <input id="fsInput" class="fs-input" placeholder="Type URL or search..." />
+    <button id="fsGo" class="btn small">Go</button>
+    <button id="fsExit" class="btn ghost small">Exit</button>
+    <button id="fsRoblox" class="btn small">ROBLOX</button>
+  </div>
+
+  <script>
+    /*************************************************************************
+     * Config
+     *************************************************************************/
+    const PROXY_PREFIX = '/scramjet?url='; // Updated to use local backend
+    const PROBE_TIMEOUT = 4500;
+
+    /*************************************************************************
+     * UI elements
+     *************************************************************************/
+    const frame = document.getElementById('frame');
+    const q = document.getElementById('q');
+    const go = document.getElementById('go');
+    const clear = document.getElementById('clear');
+    const fsBtn = document.getElementById('fsBtn');
+    const loading = document.getElementById('loading');
+    const preview = document.getElementById('preview');
+    const progressBar = loading.querySelector('.progress > i');
+
+    const fsTopbar = document.querySelector('.fs-topbar');
+    const fsInput = document.getElementById('fsInput');
+    const fsGo = document.getElementById('fsGo');
+    const fsExit = document.getElementById('fsExit');
+    const fsRoblox = document.getElementById('fsRoblox');
+
+    const robloxBtn = document.getElementById('robloxBtn');
+
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    // helper
+    function isValidURL(str){try{new URL(str);return true}catch{return false}}
+
+    function showLoading(){ loading.classList.remove('hidden'); progressBar.style.width = '6%'; frame.classList.remove('ready'); }
+    function hideLoading(){ loading.classList.add('hidden'); progressBar.style.width = '100%'; frame.classList.add('ready'); setTimeout(()=>progressBar.style.width='0%', 300); }
+
+    // Status indicator functions
+    function setStatus(type, message) {
+      statusDot.className = 'status-dot ' + type;
+      statusText.textContent = message;
+    }
+
+    function showStatus(message) {
+      statusIndicator.style.opacity = '1';
+      setStatus('', message);
+    }
+
+    function hideStatus() {
+      setTimeout(() => {
+        statusIndicator.style.opacity = '0.7';
+      }, 2000);
+    }
+
+    /*************************************************************************
+     * Backend health check
+     *************************************************************************/
+    async function checkBackendHealth() {
+      try {
+        const response = await fetch('/health', {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000)
+        });
+        
+        if (response.ok) {
+          setStatus('success', 'Connected');
+          hideStatus();
+          return true;
+        } else {
+          setStatus('error', 'Backend error');
+          return false;
+        }
+      } catch (error) {
+        setStatus('error', 'Connection failed');
+        return false;
+      }
+    }
+
+    /*************************************************************************
+     * Load target: either proxy the URL or proxy a DuckDuckGo search
+     *************************************************************************/
+    async function loadTarget(raw){
+      const val = (raw||'').trim();
+      if(!val) return;
+      
+      showLoading();
+      progressBar.style.width = '12%';
+
+      let targetUrl;
+      if(isValidURL(val) || /^https?:\/\//i.test(val)){
+        targetUrl = val;
+      } else {
+        targetUrl = 'https://duckduckgo.com/?q=' + encodeURIComponent(val);
+      }
+
+      // Check backend health before making request
+      const backendHealthy = await checkBackendHealth();
+      if (!backendHealthy) {
+        showStatus('Connection failed - using fallback');
+        setTimeout(() => {
+          frame.srcdoc = makeErrorSrcdoc(targetUrl, 'Backend connection failed. Please check if the server is running.');
+          hideLoading();
+        }, 1000);
+        return;
+      }
+
+      progressBar.style.width = '36%';
+      showStatus('Loading...');
+
+      try {
+        // Build the proxy URL
+        const proxyUrl = PROXY_PREFIX + encodeURIComponent(targetUrl);
+        
+        // Test if the proxy endpoint is accessible
+        const testResponse = await fetch(proxyUrl, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(PROBE_TIMEOUT)
+        });
+
+        if (testResponse.ok) {
+          // Set the iframe source to the proxied URL
+          frame.src = proxyUrl;
+          
+          // Wire up load listener to hide overlay when ready
+          const onLoad = ()=>{ 
+            hideLoading(); 
+            setStatus('success', 'Loaded successfully');
+            hideStatus();
+            frame.removeEventListener('load', onLoad); 
+          };
+          frame.addEventListener('load', onLoad);
+
+          // Gentle progress increase while waiting
+          let p = 36;
+          const t = setInterval(()=>{ 
+            p = Math.min(92, p + Math.random()*8); 
+            progressBar.style.width = p + '%'; 
+          }, 400);
+          
+          // Clear after 8s
+          setTimeout(()=>{ 
+            clearInterval(t); 
+            if(!frame.classList.contains('ready')) {
+              progressBar.style.width = '96%';
+              setStatus('error', 'Load timeout');
+            }
+          }, 8000);
+        } else {
+          throw new Error('Proxy endpoint returned error');
+        }
+      } catch (error) {
+        console.error('Proxy request failed:', error);
+        showStatus('Load failed - using fallback');
+        setTimeout(() => {
+          frame.srcdoc = makeErrorSrcdoc(targetUrl, 'Failed to load the page through proxy. The target site might be blocking access.');
+          hideLoading();
+        }, 1000);
+      }
+    }
+
+    /*************************************************************************
+     * Error srcdoc generator
+     *************************************************************************/
+    function escapeHtml(s){ return (s+'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
+    
+    function makeErrorSrcdoc(targetUrl, errorMessage){
+      return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Error - ${escapeHtml(targetUrl)}</title><style>body{font-family:Inter,system-ui,Arial;background:linear-gradient(180deg,#071018,#041018);color:#e6eef8;padding:28px} .u{color:#98a0b3;font-size:13px;margin-bottom:12px} .card{background:linear-gradient(180deg,#061018,#051018);padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)} .headline{font-weight:700;margin-bottom:8px;color:#ff6bd6} .error{color:#ff4444;margin-bottom:12px} a{color:#9be7ff}</style></head><body><div class="u">proxied: <strong>${escapeHtml(targetUrl)}</strong></div><div class="card"><div class="headline">Proxy Error</div><div class="error">${escapeHtml(errorMessage)}</div><div>The proxy server encountered an issue while trying to fetch this page. This could be because:</div><ul style="margin-top:8px"><li>The target website is blocking proxy access</li><li>The website requires authentication</li><li>There was a network timeout</li><li>The content is not accessible</li></ul><p style="margin-top:12px">Try refreshing the page or accessing a different website.</p></div></body></html>`;
+    }
+
+    /*************************************************************************
+     * Event wiring
+     *************************************************************************/
+    go.addEventListener('click', ()=>{ loadTarget(q.value); });
+    q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') loadTarget(q.value); });
+    clear.addEventListener('click', ()=>{ 
+      q.value=''; 
+      frame.src=''; 
+      frame.srcdoc=''; 
+      hideLoading(); 
+      setStatus('', 'Ready');
+      hideStatus();
+    });
+
+    // ROBLOX button opens easyfun.gg via proxy
+    robloxBtn.addEventListener('click', ()=>{ loadTarget('https://easyfun.gg'); });
+
+    // Fullscreen immersive mode with floating topbar for typing
+    let inFsTransition = false;
+    async function enterImmersive(){ 
+      if(inFsTransition) return; 
+      inFsTransition=true; 
+      document.body.classList.add('fs-mode');
+      try{ 
+        await document.documentElement.requestFullscreen({navigationUI:'hide'});
+        fsInput.value = q.value; 
+        fsInput.focus();
+      }catch(e){ 
+        console.warn('Fullscreen failed',e); 
+      }
+      inFsTransition=false; 
+    }
+    
+    async function exitImmersive(){ 
+      if(inFsTransition) return; 
+      inFsTransition=true; 
+      try{ 
+        if(document.fullscreenElement) await document.exitFullscreen(); 
+      }catch(e){console.warn(e);} 
+      document.body.classList.remove('fs-mode'); 
+      q.focus(); 
+      inFsTransition=false; 
+    }
+
+    fsBtn.addEventListener('click', ()=>{ 
+      if(!document.fullscreenElement) enterImmersive(); 
+      else exitImmersive(); 
+    });
+    
+    document.addEventListener('fullscreenchange', ()=>{ 
+      if(!document.fullscreenElement) {
+        document.body.classList.remove('fs-mode');
+      } else {
+        document.body.classList.add('fs-mode');
+      }
+    });
+
+    // FS topbar buttons
+    fsGo.addEventListener('click', ()=>{ 
+      loadTarget(fsInput.value); 
+      q.value = fsInput.value; 
+    });
+    
+    fsInput.addEventListener('keydown', (e)=>{ 
+      if(e.key==='Enter'){ 
+        loadTarget(fsInput.value); 
+        q.value = fsInput.value; 
+      }
+    });
+    
+    fsExit.addEventListener('click', exitImmersive);
+    fsRoblox.addEventListener('click', ()=>{ loadTarget('https://easyfun.gg'); });
+
+    // keep fsInput in sync when entering/exiting
+    q.addEventListener('input', ()=>{ 
+      if(document.fullscreenElement) fsInput.value = q.value; 
+    });
+
+    // double-click logo to paste
+    document.querySelector('.logo').addEventListener('dblclick', async ()=>{ 
+      try{ 
+        const text = await navigator.clipboard.readText(); 
+        if(text) q.value = text; 
+      }catch(e){} 
+    });
+
+    // ensure keyboard focus works: allow pressing F to toggle fullscreen when input focused
+    document.addEventListener('keydown', (e)=>{
+      if((e.key==='f' || e.key==='F') && document.activeElement===q){ 
+        e.preventDefault(); 
+        if(!document.fullscreenElement) enterImmersive(); 
+        else exitImmersive(); 
+      }
+    });
+
+    // mark iframe ready on load
+    frame.addEventListener('load', ()=>{ 
+      hideLoading(); 
+    });
+
+    /*************************************************************************
+     * Background animation: particles + vaporwave sine lines
+     * lightweight canvas animation — runs without libraries
+     *************************************************************************/
+    const canvas = document.getElementById('bgCanvas');
+    const ctx = canvas.getContext('2d');
+    let W = canvas.width = innerWidth; 
+    let H = canvas.height = innerHeight;
+
+    window.addEventListener('resize', ()=>{ 
+      W = canvas.width = innerWidth; 
+      H = canvas.height = innerHeight; 
+    });
+
+    // particles
+    const particles = [];
+    const PARTICLE_COUNT = Math.max(60, Math.floor((W*H)/60000));
+    function rand(min,max){ return Math.random()*(max-min)+min }
+    for(let i=0;i<PARTICLE_COUNT;i++) particles.push({x:rand(0,W), y:rand(0,H), r:rand(0.6,2.6), vx:rand(-0.2,0.2), vy:rand(-0.05,0.05), hue:rand(270,320)});
+
+    // vaporwave lines parameters
+    const lines = [];
+    for(let i=0;i<5;i++){ lines.push({amp:rand(12,40), freq:rand(0.002,0.006), phase:rand(0,Math.PI*2), y: H*(0.5 + (i-2)/6), speed:rand(0.0006,0.002) }); }
+
+    function renderBackground(t){
+      ctx.clearRect(0,0,W,H);
+      // gradient backdrop
+      const g = ctx.createLinearGradient(0,0,W,H);
+      g.addColorStop(0, 'rgba(12,6,24,0.6)');
+      g.addColorStop(0.5, 'rgba(8,12,40,0.65)');
+      g.addColorStop(1, 'rgba(4,6,18,0.9)');
+      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+      // vapor lines (soft neon)
+      for(let i=0;i<lines.length;i++){
+        const L = lines[i];
+        ctx.beginPath();
+        ctx.lineWidth = 1.6; ctx.strokeStyle = `rgba(155,231,255,${0.06 + i*0.02})`;
+        for(let x=0;x<W;x+=10){
+          const y = L.y + Math.sin((x*L.freq)+(t*L.speed)+L.phase)*L.amp;
+          if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+      }
+
+      // particles: glowing dots
+      for(let p of particles){
+        p.x += p.vx; p.y += p.vy;
+        if(p.x< -20) p.x = W+20; if(p.x>W+20) p.x = -20;
+        if(p.y< -20) p.y = H+20; if(p.y>H+20) p.y = -20;
+
+        const rad = ctx.createRadialGradient(p.x,p.y,p.r*0.2,p.x,p.y,p.r*6);
+        const hue = 280 + Math.sin(t*0.0004 + p.hue)*40;
+        rad.addColorStop(0, `hsla(${hue},90%,70%,0.9)`);
+        rad.addColorStop(0.3, `hsla(${hue},80%,60%,0.25)`);
+        rad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = rad; ctx.beginPath(); ctx.arc(p.x,p.y,p.r*3,0,Math.PI*2); ctx.fill();
+      }
+
+      requestAnimationFrame(renderBackground);
+    }
+    requestAnimationFrame(renderBackground);
+
+    // Initial backend health check
+    checkBackendHealth();
+
+    // Periodic health checks
+    setInterval(checkBackendHealth, 30000); // Check every 30 seconds
+
+    // initial state
+    hideLoading();
+    setStatus('', 'Ready');
+    hideStatus();
+  </script>
+</body>
+</html>
